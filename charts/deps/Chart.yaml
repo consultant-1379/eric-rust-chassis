@@ -1,0 +1,14 @@
+apiVersion: v2
+appVersion: "0.1.0"
+description: Integration chart for dependencies
+name: lab
+version: 0.1.0
+dependencies:
+  - condition: eric-data-message-bus-kf.enabled
+    name: eric-data-message-bus-kf
+    repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm
+    version: 2.2.0+28
+  - condition: eric-data-coordinator-zk.enabled
+    name: eric-data-coordinator-zk
+    repository: https://arm.sero.gic.ericsson.se/artifactory/proj-adp-gs-all-helm
+    version: 1.30.0+11

@@ -1,0 +1,24 @@
+[package]
+name = "ves"
+version = "0.1.0"
+edition = "2021"
+
+default-run = "ves"
+
+[[bin]]
+name = "ves"
+path = "src/main.rs"
+
+# TODO(3pp): Private cargo registry - https://doc.rust-lang.org/cargo/reference/registries.html
+[dependencies]
+eric-rust-library = "0.1.0"
+actix-web = "4.4.0"
+chrono = "0.4.31"
+config = { version = "0.13.4", features = ["yaml"] }
+serde_json = "1.0"
+log = "0.4.20"
+env_logger = "0.10.2"
+serde = "1.0.195"
+rdkafka = { version = "0.36.2", features = ["cmake-build"] }
+tokio = { version = "1", features = ["full"] }
+jsonschema = "0.17.1"

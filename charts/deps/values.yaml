@@ -1,0 +1,24 @@
+global:
+  pullSecret: "regcred"
+  security:
+    tls:
+      enabled: false
+
+eric-data-message-bus-kf:
+  enabled: true
+  replicaCount: 1
+  service:
+    endpoints:
+      messagebuskf:
+        tls:
+          enforced: optional
+  persistence:
+    persistentVolumeClaim:
+      enabled: false
+
+eric-data-coordinator-zk:
+  enabled: true
+  replicaCount: 1
+  persistence:
+    persistentVolumeClaim:
+      enabled: false

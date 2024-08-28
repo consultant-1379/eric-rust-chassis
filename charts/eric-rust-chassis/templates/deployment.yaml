@@ -1,0 +1,239 @@
+#
+# COPYRIGHT Ericsson 2021
+#
+#
+#
+# The copyright to the computer program(s) herein is the property of
+#
+# Ericsson Inc. The programs may be used and/or copied only with written
+#
+# permission from Ericsson Inc. or in accordance with the terms and
+#
+# conditions stipulated in the agreement/contract under which the
+#
+# program(s) have been supplied.
+#
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "eric-rust-chassis.fullname" . }}
+  labels:
+  {{- include "eric-rust-chassis.labels" . | nindent 4 }}
+  annotations:
+  {{- include "eric-rust-chassis.annotations" . | nindent 4 }}
+  {{- include "eric-rust-chassis.prometheus" . | nindent 4 }}
+spec:
+{{- if not .Values.autoScaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+{{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "eric-rust-chassis.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  strategy:
+    type: {{ .Values.updateStrategy.type | quote }}
+    {{- if and (eq .Values.updateStrategy.type "RollingUpdate") .Values.updateStrategy.rollingUpdate }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.updateStrategy.rollingUpdate.maxUnavailable }}
+      maxSurge: {{ .Values.updateStrategy.rollingUpdate.maxSurge }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "eric-rust-chassis.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/version: {{ include "eric-rust-chassis.version" . }}
+{{- include "eric-rust-chassis.directStreamingLabel" . | indent 8 }}
+      annotations:
+      {{- $productInfo := include "eric-rust-chassis.product-info" . | fromYaml }}
+      {{- $config := include "eric-rust-chassis.config-annotations" . | fromYaml }}
+      {{- $containerAnn := include "eric-rust-chassis.container-annotations" . | fromYaml }}
+      {{- include "eric-rust-chassis.mergeAnnotations" (dict "location" .Template.Name "sources" (list $productInfo $config $containerAnn)) | indent 8 }}
+    spec:
+      {{- if include "eric-rust-chassis.pullSecret" . }}
+      imagePullSecrets:
+        - name: {{ include "eric-rust-chassis.pullSecret" . | quote}}
+      {{- end }}
+      serviceAccountName: {{ template "eric-rust-chassis.fullname" . }}
+      securityContext:
+        fsGroup: {{ include "eric-rust-chassis.fsGroup.coordinated" . }}
+        {{- include "eric-rust-chassis.seccomp-profile" . | indent 8 }}
+      volumes:
+        - name: tmp-volume
+          emptyDir: {}
+        - name: config-volume
+          configMap:
+            defaultMode: 493
+            name: {{ include "eric-rust-chassis.name" . }}-configmap
+      containers:
+        {{- if .Values.service.debugPod }}
+        - name: eric-rust-chassis-debug
+          image: {{ include "eric-rust-chassis.mainImagePath" . | replace "eric-rust-chassis" "eric-rust-chassis-debug" }}
+          imagePullPolicy: {{ template "eric-rust-chassis.registryImagePullPolicy" . }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - all
+        {{- end }}
+        - name: eric-rust-chassis
+          image: {{ include "eric-rust-chassis.mainImagePath" . }}
+          imagePullPolicy: {{ template "eric-rust-chassis.registryImagePullPolicy" . }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - all
+          volumeMounts:
+            - mountPath: /tmp
+              name: tmp-volume
+            - name: config-volume
+              mountPath: /config
+          {{- if (((.Values.global).security).tls).enabled }}
+          ports:
+            - name: https-ingress
+              containerPort: 8080
+              protocol: TCP
+          {{- else }}
+          ports:
+            - name: http-ingress
+              containerPort: 8080
+              protocol: TCP
+          {{- end }}
+          livenessProbe:
+          {{- if (index .Values "probes" "eric-rust-chassis" "livenessProbe" "initialDelaySeconds") }}
+            {{ print "initialDelaySeconds: " (index .Values "probes" "eric-rust-chassis" "livenessProbe" "initialDelaySeconds") }}
+          {{- end }}
+          {{- if (index .Values "probes" "eric-rust-chassis" "livenessProbe" "failureThreshold") }}
+            {{ print "failureThreshold: " (index .Values "probes" "eric-rust-chassis" "livenessProbe" "failureThreshold") }}
+          {{- end }}
+          {{- if (index .Values "probes" "eric-rust-chassis" "livenessProbe" "periodSeconds") }}
+            {{ print "periodSeconds: " (index .Values "probes" "eric-rust-chassis" "livenessProbe" "periodSeconds") }}
+          {{- end }}
+          {{- if (index .Values "probes" "eric-rust-chassis" "livenessProbe" "timeoutSeconds") }}
+            {{ print "timeoutSeconds: " (index .Values "probes" "eric-rust-chassis" "livenessProbe" "timeoutSeconds") }}
+          {{- end }}
+            httpGet:
+              path: /health
+          {{- if (((.Values.global).security).tls).enabled }}
+              port: https-ingress
+          {{- else }}
+              port: http-ingress
+          {{- end }}
+          readinessProbe:
+          {{- if (index .Values "probes" "eric-rust-chassis" "readinessProbe" "initialDelaySeconds") }}
+            {{ print "initialDelaySeconds: " (index .Values "probes" "eric-rust-chassis" "readinessProbe" "initialDelaySeconds") }}
+          {{- end }}
+          {{- if (index .Values "probes" "eric-rust-chassis" "readinessProbe" "failureThreshold") }}
+            {{ print "failureThreshold: " (index .Values "probes" "eric-rust-chassis" "readinessProbe" "failureThreshold") }}
+          {{- end }}
+          {{- if (index .Values "probes" "eric-rust-chassis" "readinessProbe" "periodSeconds") }}
+            {{ print "periodSeconds: " (index .Values "probes" "eric-rust-chassis" "readinessProbe" "periodSeconds") }}
+          {{- end }}
+          {{- if (index .Values "probes" "eric-rust-chassis" "readinessProbe" "timeoutSeconds") }}
+            {{ print "timeoutSeconds: " (index .Values "probes" "eric-rust-chassis" "readinessProbe" "timeoutSeconds") }}
+          {{- end }}
+            httpGet:
+              path: /health
+          {{- if (((.Values.global).security).tls).enabled }}
+              port: https-ingress
+          {{- else }}
+              port: http-ingress
+          {{- end }}
+          env:
+          - name: APP_CONFIG_FILE
+            value: /config/settings
+          - name: RUST_LOG
+            value: {{ .Values.config.logLevel }}
+          - name: SERVICE_ID
+            value: {{ include "eric-rust-chassis.name" . | quote}}
+          - name: TZ
+            value: {{ template "eric-rust-chassis.timezone" . }}
+      {{- if .Values.global }}
+        {{- if .Values.global.security }}
+          {{- if .Values.global.security.tls }}
+            {{- if .Values.global.security.tls.enabled }}
+          - name: CONNECT_MODE
+            value: "tls"
+            {{- if (eq .Values.service.endpoints.chassisapi.tls.enforced "required") }}
+          - name: TLS_MODE
+            value: "only_tls"
+            {{- if (eq .Values.service.endpoints.chassisapi.tls.verifyClientCertificate "required") }}
+          - name: TLS_CA
+            value: "ca_path"
+            {{- end }}
+            {{- end }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+      {{- include "eric-rust-chassis.loggingEnv" . | indent 10 }}
+          resources:
+            requests:
+            {{- if (index .Values "resources" "eric-rust-chassis" "requests" "cpu") }}
+              cpu: {{ (index .Values "resources" "eric-rust-chassis" "requests" "cpu" | quote) }}
+            {{- end }}
+            {{- if (index .Values "resources" "eric-rust-chassis" "requests" "memory") }}
+              memory: {{ (index .Values "resources" "eric-rust-chassis" "requests" "memory" | quote) }}
+            {{- end }}
+            {{- if (index .Values "resources" "eric-rust-chassis" "requests" "ephemeral-storage") }}
+            {{ println "  ephemeral-storage:" (index .Values "resources" "eric-rust-chassis" "requests" "ephemeral-storage" | quote) }}
+            {{- end }}
+            limits:
+            {{- if (index .Values "resources" "eric-rust-chassis" "limits" "cpu") }}
+              cpu: {{ (index .Values "resources" "eric-rust-chassis" "limits" "cpu" | quote) }}
+            {{- end }}
+            {{- if (index .Values "resources" "eric-rust-chassis" "limits" "memory") }}
+              memory: {{ (index .Values "resources" "eric-rust-chassis" "limits" "memory" | quote) }}
+            {{- end }}
+            {{- if (index .Values "resources" "eric-rust-chassis" "limits" "ephemeral-storage") }}
+            {{ println "  ephemeral-storage:" (index .Values "resources" "eric-rust-chassis" "limits" "ephemeral-storage" | quote) }}
+            {{- end }}
+      nodeSelector: {{ include "eric-rust-chassis.nodeSelector" . | nindent 6 -}}
+
+      {{- if .Values.terminationGracePeriodSeconds }}
+      terminationGracePeriodSeconds: {{- include "eric-rust-chassis.terminationGracePeriodSeconds" . | nindent 8 }}
+      {{- end }}
+
+      tolerations: {{- include "eric-rust-chassis.tolerations" . | nindent 8 }}
+
+      {{- if (index .Values "podPriority" "eric-rust-chassis" "priorityClassName") }}
+      priorityClassName: {{ (index .Values "podPriority" "eric-rust-chassis" "priorityClassName") }}
+      {{- end }}
+
+      {{- with .Values.topologySpreadConstraints.deployment }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 6 }}
+      {{- end }}
+      {{- if eq .Values.affinity.podAntiAffinity "hard" }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - {{ include "eric-rust-chassis.name" . }}
+            topologyKey: {{ .Values.affinity.topologyKey | quote }}
+      {{- else if eq .Values.affinity.podAntiAffinity  "soft" }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - {{ include "eric-rust-chassis.name" . }}
+              topologyKey: {{ .Values.affinity.topologyKey | quote }}
+      {{- end }}

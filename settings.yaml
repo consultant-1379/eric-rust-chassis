@@ -1,0 +1,22 @@
+kafka:
+  address: localhost:9092
+
+interfaces:
+  http:
+    port: 8080
+  northbound:
+    kafka:
+      output_1:
+        topic: output_1
+  southbound:
+    kafka:
+      enable: false
+      input_1:
+        enable: false
+        topic: input_1
+        group_id: input_1_group_id
+        enable_auto_commit: false
+
+schemas:
+  apiVersion:
+    7.2.1: "ms/res/schemas/CommonEventFormat_30.2.1.json"

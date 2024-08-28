@@ -1,0 +1,14 @@
+[workspace]
+
+members = [
+    "ers",
+    "ms"
+]
+
+resolver = "2"
+
+[profile.release]
+strip = "symbols"
+
+[patch.crates-io]
+eric-rust-library = { path = "ers" }

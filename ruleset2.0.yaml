@@ -1,0 +1,102 @@
+modelVersion: 2.0
+
+description: "Rust CI Ruleset"
+
+docker-images:
+  - adp-helm-kubectl: armdocker.rnd.ericsson.se/proj-adp-cicd-drop/bob-py3kubehelmbuilder:latest
+
+# These images are not uploaded, so they cannot be pulled
+local-docker-images:
+  - build-image: ${env.BUILD_IMAGE}
+
+import:
+  common: common-properties.yaml
+
+properties:
+  - dockerfile-build: buildenv.Dockerfile
+  - project-dir: .
+
+  - docker-flags-cargo: >
+      --env HOME=${env.HOME}
+      --env CARGO_HOME=${env.WORKSPACE}/.cargo
+      --volume ${env.HOME}:${env.HOME}
+      --volume ${env.PWD}:${env.PWD}
+
+  - docker-flags-kube: >
+      --network=host
+      --env HOME=${env.HOME}
+      --env K8S_NAMESPACE=${env.K8S_NAMESPACE}
+      --env KUBECONFIG=${env.KUBECONFIG}
+      --env ENABLE_HELM_V3=true
+      --volume ${env.HOME}:${env.HOME}
+      --volume ${env.PWD}:${env.PWD}
+      --volume ${env.KUBECONFIG}:${env.KUBECONFIG}
+
+var:
+  - commithash
+  - version
+
+env:
+  - HOME
+  - USER
+  - PWD
+
+  - WORKSPACE
+  - BUILD_IMAGE (default=rust-buildenv:latest)
+
+  - K8S_NAMESPACE (default=${common.helm-chart-name}-${var.commithash})
+  - KUBECONFIG (default=${env.HOME}/.kube/config)
+
+rules:
+  create-build-image:
+    - task: build
+      cmd: docker build ${project-dir}
+        --build-arg CBOS_VER=${common.cbos-image-version}
+        --tag ${env.BUILD_IMAGE}
+        --file ${dockerfile-build}
+
+  build:
+    - task: compile
+      docker-image: build-image
+      docker-flags:
+        - ${docker-flags-cargo}
+      cmd: cargo build --release
+
+  test:
+    - task: unit-test
+      docker-image: build-image
+      docker-flags:
+        - ${docker-flags-cargo}
+      cmd: cargo test
+
+  doc:
+    - task: create
+      docker-image: build-image
+      docker-flags:
+        - ${docker-flags-cargo}
+      cmd: cargo doc
+
+  test-deploy:
+    - task: external-health-check
+      docker-image: adp-helm-kubectl
+      docker-flags:
+        - ${docker-flags-kube}
+      cmd: >
+        /bin/bash -c '''
+          set -euo pipefail
+
+          service_ip=$(kubectl get svc -n ${env.K8S_NAMESPACE} ${common.helm-chart-name} --template "{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}")
+          service_port=$(kubectl get svc -n ${env.K8S_NAMESPACE} ${common.helm-chart-name} -o=jsonpath='{.spec.ports[0].nodePort}')
+          service=$${service_ip}:$${service_port}
+
+          result=$(curl --silent --verbose $${service}/health)
+
+          if [[ $${result} == Healthy ]]; then
+            echo "Deployment test successful!"
+            exit 0
+          else
+            echo "Deployment test failed!"
+            echo "Result: $${result}"
+            exit 1
+          fi
+        '''
